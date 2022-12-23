@@ -14,7 +14,7 @@ class Detector:
         self.threshold = 0.3
         self.stride = 1
 
-        self.weights = './weights/yolov5m.pt'
+        self.weights = './weights/yolov5x-old.pt'
 
         self.device = '0' if torch.cuda.is_available() else 'cpu'
         self.device = select_device(self.device)
@@ -57,7 +57,8 @@ class Detector:
 
                 for *x, conf, cls_id in det:
                     lbl = self.names[int(cls_id)]
-                    if lbl not in ['person', 'bicycle', 'car', 'motorcycle', 'bus', 'truck']:
+                    # if lbl not in ['person', 'bicycle', 'car', 'motorcycle', 'bus', 'truck']:
+                    if lbl not in ['car', 'bus', 'truck']:
                         continue
                     pass
                     x1, y1 = int(x[0]), int(x[1])

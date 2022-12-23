@@ -4,52 +4,68 @@ import tracker
 from detector import Detector
 import cv2
 
+# 初始化2个撞线polygon
+list_pts_blue = []
+list_pts_yellow = []
+# list 与蓝色polygon重叠
+list_overlapping_blue_polygon = []
+
+# list 与黄色polygon重叠
+list_overlapping_yellow_polygon = []
+
+color_polygons_image = None
+
+drag_start = None
+sel = None
+
+def onmouse(event, x, y, flags, param):
+    global drag_start
+    global sel
+    if event == cv2.EVENT_LBUTTONDOWN:
+        drag_start = x, y
+        sel = (0,0,0,0)
+    elif event == cv2.EVENT_LBUTTONUP:
+        if sel[2] > sel[0] and sel[3] > sel[1]:
+            param[1].append([sel[0], sel[1]])
+            param[1].append([sel[0],sel[3]])
+            param[1].append([sel[2], sel[3]])
+            param[1].append([sel[2], sel[1]])
+        drag_start = None
+    elif drag_start:
+        #print flags
+        if flags & cv2.EVENT_FLAG_LBUTTON:
+            minpos = min(drag_start[0], x), min(drag_start[1], y)
+            maxpos = max(drag_start[0], x), max(drag_start[1], y)
+            sel = (minpos[0], minpos[1], maxpos[0], maxpos[1])
+            img = param[0].copy()
+            cv2.rectangle(img, (sel[0], sel[1]), (sel[2], sel[3]), (0,255,255), 1)
+            cv2.imshow("select_line", img)
+        else:
+            print("selection is complete")
+            drag_start = None
+
+def recalculate_coordinate(list_pts, video_size, target_size):
+    print(video_size)
+    v_h = video_size[0]
+    v_w = video_size[1]
+    t_h = target_size[0]
+    t_w = target_size[1]
+    print(v_h, v_w, t_h, t_w)
+    for pts in list_pts:
+        pts[0] = int(pts[0] * t_w / v_w)
+        pts[1] = int(pts[1] * t_h / v_h)
+    return list_pts
+
 if __name__ == '__main__':
 
     # 根据视频尺寸，填充一个polygon，供撞线计算使用
-    mask_image_temp = np.zeros((1080, 1920), dtype=np.uint8)
-
+    mask_image_temp = None
+    color_polygons_image = None
+    polygon_blue_value_1 = None
+    polygon_yellow_value_2 = None
     # 初始化2个撞线polygon
-    list_pts_blue = [[204, 305], [227, 431], [605, 522], [1101, 464], [1900, 601], [1902, 495], [1125, 379], [604, 437],
-                     [299, 375], [267, 289]]
-    ndarray_pts_blue = np.array(list_pts_blue, np.int32)
-    polygon_blue_value_1 = cv2.fillPoly(mask_image_temp, [ndarray_pts_blue], color=1)
-    polygon_blue_value_1 = polygon_blue_value_1[:, :, np.newaxis]
-
-    # 填充第二个polygon
-    mask_image_temp = np.zeros((1080, 1920), dtype=np.uint8)
-    list_pts_yellow = [[181, 305], [207, 442], [603, 544], [1107, 485], [1898, 625], [1893, 701], [1101, 568],
-                       [594, 637], [118, 483], [109, 303]]
-    ndarray_pts_yellow = np.array(list_pts_yellow, np.int32)
-    polygon_yellow_value_2 = cv2.fillPoly(mask_image_temp, [ndarray_pts_yellow], color=2)
-    polygon_yellow_value_2 = polygon_yellow_value_2[:, :, np.newaxis]
-
-    # 撞线检测用mask，包含2个polygon，（值范围 0、1、2），供撞线计算使用
-    polygon_mask_blue_and_yellow = polygon_blue_value_1 + polygon_yellow_value_2
-
-    # 缩小尺寸，1920x1080->960x540
-    polygon_mask_blue_and_yellow = cv2.resize(polygon_mask_blue_and_yellow, (960, 540))
-
-    # 蓝 色盘 b,g,r
-    blue_color_plate = [255, 0, 0]
-    # 蓝 polygon图片
-    blue_image = np.array(polygon_blue_value_1 * blue_color_plate, np.uint8)
-
-    # 黄 色盘
-    yellow_color_plate = [0, 255, 255]
-    # 黄 polygon图片
-    yellow_image = np.array(polygon_yellow_value_2 * yellow_color_plate, np.uint8)
-
-    # 彩色图片（值范围 0-255）
-    color_polygons_image = blue_image + yellow_image
-    # 缩小尺寸，1920x1080->960x540
-    color_polygons_image = cv2.resize(color_polygons_image, (960, 540))
-
-    # list 与蓝色polygon重叠
-    list_overlapping_blue_polygon = []
-
-    # list 与黄色polygon重叠
-    list_overlapping_yellow_polygon = []
+    # list_pts_blue = [[204, 305], [227, 431], [605, 522], [1101, 464], [1900, 601], [1902, 495], [1125, 379], [604, 437],
+    #                  [299, 375], [267, 289]]
 
     # 进入数量
     down_count = 0
@@ -63,18 +79,73 @@ if __name__ == '__main__':
     detector = Detector()
 
     # 打开视频
-    capture = cv2.VideoCapture('./video/test.mp4')
-    # capture = cv2.VideoCapture('/mnt/datasets/datasets/towncentre/TownCentreXVID.avi')
+    capture = cv2.VideoCapture('./video/路口1.mp4')
 
+    first_line_initialized = False
+    second_line_initialized = False
+    first_iter = True
     while True:
         # 读取每帧图片
         _, im = capture.read()
         if im is None:
             break
 
+        if not first_line_initialized:
+            cv2.namedWindow("select_line",1)
+            cv2.setMouseCallback("select_line", onmouse, (im, list_pts_blue))
+            cv2.imshow('select_line', im)
+            cv2.waitKey(0)
+            cv2.destroyWindow('select_line')
+            mask_image_temp = np.zeros((1080, 1920), dtype=np.uint8)
+            print(list_pts_blue)
+            list_pts_blue = recalculate_coordinate(list_pts_blue, (im.shape[0], im.shape[1]), (mask_image_temp.shape[0], mask_image_temp.shape[1]))
+            print(list_pts_blue)
+            ndarray_pts_blue = np.array(list_pts_blue, np.int32)
+            polygon_blue_value_1 = cv2.fillPoly(mask_image_temp, [ndarray_pts_blue], color=1)
+            polygon_blue_value_1 = polygon_blue_value_1[:, :, np.newaxis]
+            
+            first_line_initialized = True
+
+        if not second_line_initialized:
+            cv2.namedWindow("select_line",1)
+            cv2.setMouseCallback("select_line", onmouse, (im, list_pts_yellow))
+            cv2.imshow('select_line', im)
+            cv2.waitKey(0)
+            cv2.destroyWindow('select_line')
+            mask_image_temp = np.zeros((1080, 1920), dtype=np.uint8)
+            print(list_pts_yellow)
+            list_pts_yellow = recalculate_coordinate(list_pts_yellow, (im.shape[0], im.shape[1]), (mask_image_temp.shape[0], mask_image_temp.shape[1]))
+            print(list_pts_yellow)
+            ndarray_pts_yellow = np.array(list_pts_yellow, np.int32)
+            polygon_yellow_value_2 = cv2.fillPoly(mask_image_temp, [ndarray_pts_yellow], color=2)
+            polygon_yellow_value_2 = polygon_yellow_value_2[:, :, np.newaxis]
+
+            second_line_initialized = True
+        
+           
+        if first_iter:
+            polygon_mask_blue_and_yellow = polygon_yellow_value_2 + polygon_blue_value_1
+            polygon_mask_blue_and_yellow = cv2.resize(polygon_mask_blue_and_yellow, (960, 540))
+            
+            # 蓝 色盘 b,g,r
+            blue_color_plate = [255, 0, 0]
+            # 蓝 polygon图片G
+            blue_image = np.array(polygon_blue_value_1 * blue_color_plate, np.uint8)
+            # 黄 色盘`
+            #  `
+            yellow_color_plate = [0, 255, 255]
+            # 黄 polygon图片
+            yellow_image = np.array(polygon_yellow_value_2 * yellow_color_plate, np.uint8)
+
+            # 彩色图片（值范围 0-255）
+            # color_polygons_image = blue_image + yellow_image
+            color_polygons_image = yellow_image + blue_image
+            # 缩小尺寸，1920x1080->960x540
+            color_polygons_image = cv2.resize(color_polygons_image, (960, 540))
+            first_iter = False
+
         # 缩小尺寸，1920x1080->960x540
         im = cv2.resize(im, (960, 540))
-
         list_bboxs = []
         bboxes = detector.detect(im)
 
@@ -84,7 +155,7 @@ if __name__ == '__main__':
 
             # 画框
             # 撞线检测点，(x1，y1)，y方向偏移比例 0.0~1.0
-            output_image_frame = tracker.draw_bboxes(im, list_bboxs, line_thickness=None)
+            output_image_frame = tracker.draw_bboxes(im, list_bboxs, line_thickness=1)
             pass
         else:
             # 如果画面中 没有bbox
@@ -118,7 +189,7 @@ if __name__ == '__main__':
                         # 外出+1
                         up_count += 1
 
-                        print(f'类别: {label} | id: {track_id} | 上行撞线 | 上行撞线总数: {up_count} | 上行id列表: {list_overlapping_yellow_polygon}')
+                        print(f'类别: {label} | id: {track_id} | 撞线 | 撞线总数: {up_count} | id列表: {list_overlapping_yellow_polygon}')
 
                         # 删除 黄polygon list 中的此id
                         list_overlapping_yellow_polygon.remove(track_id)
@@ -190,8 +261,7 @@ if __name__ == '__main__':
             pass
         pass
 
-        text_draw = 'DOWN: ' + str(down_count) + \
-                    ' , UP: ' + str(up_count)
+        text_draw = 'traffic: ' + str(down_count)
         output_image_frame = cv2.putText(img=output_image_frame, text=text_draw,
                                          org=draw_text_postion,
                                          fontFace=font_draw_number,
